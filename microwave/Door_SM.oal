@@ -1,0 +1,58 @@
+// =============================================================
+// CLASS:         Door
+// STATE MACHINE: Door_SM
+// =============================================================
+//
+// ATTRIBUTES:
+//   interlock_active : boolean
+//     -- true when the door latch is engaged and RF cannot leak.
+//     -- set false only when oven is in Door_Open or Off state.
+//
+// STATES:
+//   1. Closed  (initial state — latch engaged)
+//   2. Open    (latch released; cooking must stop)
+//
+// EVENTS:
+//   Door1 : open
+//   Door2 : close
+//
+// TRANSITION TABLE:
+//   Current State | Event | Next State
+//   ------------- | ----- | ----------
+//   Closed        | open  | Open
+//   Open          | close | Closed
+// =============================================================
+
+
+// -------------------------------------------------------------
+// STATE: Closed  (Initial State)
+// -------------------------------------------------------------
+state Door::Closed()
+
+  self.interlock_active = true;
+
+  // Notify the oven that the door is now shut so it can
+  // resume or remain in Idle as appropriate.
+  select one oven related by self->MicrowaveOven[R1];
+  if ( not_empty oven )
+    generate MicrowaveOven4:'door_closed'() to oven;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Open
+// -------------------------------------------------------------
+state Door::Open()
+
+  self.interlock_active = false;
+
+  // Immediately notify the oven — it must stop the magnetron
+  // and transition to Door_Open or Paused.
+  select one oven related by self->MicrowaveOven[R1];
+  if ( not_empty oven )
+    generate MicrowaveOven3:'door_opened'() to oven;
+  end if;
+
+end state;

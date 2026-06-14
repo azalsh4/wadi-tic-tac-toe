@@ -1,0 +1,73 @@
+// =============================================================
+// CLASS:         Magnetron
+// STATE MACHINE: Magnetron_SM
+// =============================================================
+//
+// ATTRIBUTES:
+//   power_level  : integer   -- 0-100 percent duty cycle
+//   temperature  : real      -- internal temperature in Celsius
+//
+// STATES:
+//   1. Off    (initial state — tube is cold, no RF emission)
+//   2. On     (tube energised; emitting microwave radiation)
+//
+// EVENTS:
+//   Magnetron1 : deactivate
+//   Magnetron2 : activate   { power : integer }
+//
+// TRANSITION TABLE:
+//   Current State | Event      | Next State
+//   ------------- | ---------- | ----------
+//   Off           | activate   | On
+//   On            | deactivate | Off
+//
+// SAFETY NOTE:
+//   The MicrowaveOven state machine guarantees that 'activate'
+//   is only generated when the Door is in the Closed state.
+//   The Magnetron class itself does not re-check the door —
+//   that responsibility belongs to the MicrowaveOven controller.
+// =============================================================
+
+
+// -------------------------------------------------------------
+// STATE: Off  (Initial State)
+// -------------------------------------------------------------
+state Magnetron::Off()
+
+  self.power_level = 0;
+  self.temperature = 0.0;
+
+  // Notify hardware abstraction layer to cut tube power
+  HW::magnetron_disable();
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: On
+// Entered when MicrowaveOven sends 'activate' with a power level.
+// -------------------------------------------------------------
+state Magnetron::On()
+
+  // param.power carries the requested duty cycle (0-100)
+  self.power_level = param.power;
+
+  // Drive the hardware at the requested duty cycle
+  HW::magnetron_enable( duty_cycle : self.power_level );
+
+  // Log activation for diagnostics
+  LOG::LogInfo( message : "Magnetron ON at " +
+                STRING::itoa( i : self.power_level ) + "%" );
+
+end state;
+
+
+// =============================================================
+// TRANSITION ACTION: Off --[activate]--> On
+// Capture the incoming power parameter before entering On.
+// =============================================================
+transition Magnetron::Off:'activate'( power : integer ) -> On()
+
+  self.power_level = power;
+
+end transition;

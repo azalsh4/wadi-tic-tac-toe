@@ -1,0 +1,174 @@
+// =============================================================
+// CLASS:         MicrowaveOven
+// STATE MACHINE: MicrowaveOven_SM
+// =============================================================
+//
+// ATTRIBUTES:
+//   cook_time    : integer  -- seconds remaining to cook
+//   power_level  : integer  -- 0-100 percent magnetron power
+//   display_msg  : string   -- text shown on display panel
+//
+// STATES:
+//   1. Off        (initial state — no power)
+//   2. Idle       (powered on, door closed, not cooking)
+//   3. Door_Open  (door is open; cooking blocked)
+//   4. Cooking    (magnetron active, timer counting down)
+//   5. Paused     (door opened mid-cook; resumes on close)
+//   6. Done       (timer expired; awaiting acknowledgement)
+//
+// EVENTS:
+//   MicrowaveOven1 : power_on
+//   MicrowaveOven2 : power_off
+//   MicrowaveOven3 : door_opened
+//   MicrowaveOven4 : door_closed
+//   MicrowaveOven5 : start_cooking   { cook_time: integer, power_level: integer }
+//   MicrowaveOven6 : timer_expired
+//   MicrowaveOven7 : cancel
+//   MicrowaveOven8 : acknowledge_done
+//
+// TRANSITION TABLE:
+//   Current State | Event            | Next State
+//   ------------- | ---------------- | ----------
+//   Off           | power_on         | Idle
+//   Idle          | power_off        | Off
+//   Idle          | door_opened      | Door_Open
+//   Idle          | start_cooking    | Cooking
+//   Door_Open     | door_closed      | Idle
+//   Cooking       | door_opened      | Paused
+//   Cooking       | timer_expired    | Done
+//   Cooking       | cancel           | Idle
+//   Paused        | door_closed      | Cooking
+//   Paused        | cancel           | Idle
+//   Done          | acknowledge_done | Idle
+// =============================================================
+
+
+// -------------------------------------------------------------
+// STATE: Off  (Initial State)
+// -------------------------------------------------------------
+state MicrowaveOven::Off()
+
+  self.display_msg  = "OFF";
+  self.cook_time    = 0;
+  self.power_level  = 0;
+
+  select one mgn related by self->Magnetron[R3];
+  if ( not_empty mgn )
+    generate Magnetron1:'deactivate'() to mgn;
+  end if;
+
+  select one tmr related by self->Timer[R2];
+  if ( not_empty tmr )
+    generate Timer1:'cancel'() to tmr;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Idle
+// -------------------------------------------------------------
+state MicrowaveOven::Idle()
+
+  self.display_msg = "0:00";
+  self.cook_time   = 0;
+
+  // Ensure door interlock is re-enabled now that oven is safe
+  select one door related by self->Door[R1];
+  if ( not_empty door )
+    door.interlock_active = true;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Door_Open
+// -------------------------------------------------------------
+state MicrowaveOven::Door_Open()
+
+  self.display_msg = "DOOR OPEN";
+
+  // Stop timer if it was running (handles transition from Paused)
+  select one tmr related by self->Timer[R2];
+  if ( not_empty tmr )
+    generate Timer1:'cancel'() to tmr;
+  end if;
+
+  // Guarantee magnetron is off — safety interlock
+  select one mgn related by self->Magnetron[R3];
+  if ( not_empty mgn )
+    generate Magnetron1:'deactivate'() to mgn;
+  end if;
+
+  // Release door interlock so user can open fully
+  select one door related by self->Door[R1];
+  if ( not_empty door )
+    door.interlock_active = false;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Cooking
+// Entered from Idle (new cook) or from Paused (door re-closed)
+// -------------------------------------------------------------
+state MicrowaveOven::Cooking()
+
+  self.display_msg = "COOKING";
+
+  select one tmr related by self->Timer[R2];
+  if ( not_empty tmr )
+    generate Timer2:'start'( duration : self.cook_time ) to tmr;
+  end if;
+
+  select one mgn related by self->Magnetron[R3];
+  if ( not_empty mgn )
+    generate Magnetron2:'activate'( power : self.power_level ) to mgn;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Paused
+// Door opened while cooking; magnetron must stop immediately.
+// -------------------------------------------------------------
+state MicrowaveOven::Paused()
+
+  self.display_msg = "PAUSED - CLOSE DOOR";
+
+  // Pause the timer so remaining time is preserved
+  select one tmr related by self->Timer[R2];
+  if ( not_empty tmr )
+    generate Timer3:'pause'() to tmr;
+  end if;
+
+  // Cut magnetron power — safety requirement
+  select one mgn related by self->Magnetron[R3];
+  if ( not_empty mgn )
+    generate Magnetron1:'deactivate'() to mgn;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Done
+// Timer has reached zero; alert the user.
+// -------------------------------------------------------------
+state MicrowaveOven::Done()
+
+  self.display_msg = "DONE!";
+  self.cook_time   = 0;
+
+  select one mgn related by self->Magnetron[R3];
+  if ( not_empty mgn )
+    generate Magnetron1:'deactivate'() to mgn;
+  end if;
+
+  // Sound audible alert (bridge to external beeper hardware)
+  BEEPER::sound( beeps : 3 );
+
+end state;

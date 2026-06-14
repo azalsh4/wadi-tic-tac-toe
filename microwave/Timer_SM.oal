@@ -1,0 +1,128 @@
+// =============================================================
+// CLASS:         Timer
+// STATE MACHINE: Timer_SM
+// =============================================================
+//
+// ATTRIBUTES:
+//   duration    : integer  -- total cook time in seconds
+//   remaining   : integer  -- seconds left on the countdown
+//   tick_count  : integer  -- number of ticks processed so far
+//
+// STATES:
+//   1. Inactive  (initial state — timer is not running)
+//   2. Running   (counting down; generates tick events to itself)
+//   3. Paused    (countdown frozen; resumable)
+//   4. Expired   (remaining reached zero; notifies oven)
+//
+// EVENTS:
+//   Timer1 : cancel                            -- stop and reset
+//   Timer2 : start   { duration : integer }    -- load and begin
+//   Timer3 : pause                             -- freeze countdown
+//   Timer4 : tick                              -- 1-second heartbeat
+//   Timer5 : resume                            -- unfreeze countdown
+//
+// TRANSITION TABLE:
+//   Current State | Event   | Next State
+//   ------------- | ------- | ----------
+//   Inactive      | start   | Running
+//   Running       | tick    | Running   (self-loop, decrements remaining)
+//   Running       | tick    | Expired   (guard: remaining == 0)
+//   Running       | pause   | Paused
+//   Running       | cancel  | Inactive
+//   Paused        | resume  | Running
+//   Paused        | cancel  | Inactive
+//   Expired       | cancel  | Inactive
+//
+// NOTE: The tick self-loop on Running has a guard condition.
+//       When remaining > 0 the state stays in Running;
+//       when remaining reaches 0 it transitions to Expired.
+//       In BridgePoint this is modeled as two separate transitions
+//       from Running on the 'tick' event with can't-happen guards.
+// =============================================================
+
+
+// -------------------------------------------------------------
+// STATE: Inactive  (Initial State)
+// -------------------------------------------------------------
+state Timer::Inactive()
+
+  self.remaining  = 0;
+  self.duration   = 0;
+  self.tick_count = 0;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Running
+// Re-entered every second via the tick self-loop.
+// -------------------------------------------------------------
+state Timer::Running()
+
+  // Decrement remaining and schedule the next tick via a
+  // 1-second delayed self-event (TIM bridge or equivalent).
+  if ( self.remaining > 0 )
+    self.remaining   = self.remaining - 1;
+    self.tick_count  = self.tick_count + 1;
+
+    // Schedule next tick in 1 000 ms
+    inst_ref = TIM::timer_start( microseconds : 1000000, event_inst :
+                 generate Timer4:'tick'() to self );
+
+    // Update oven display with current countdown
+    select one oven related by self->MicrowaveOven[R2];
+    if ( not_empty oven )
+      minutes = self.remaining / 60;
+      seconds = self.remaining - ( minutes * 60 );
+      oven.display_msg = STRING::itoa( i : minutes ) + ":" +
+                         STRING::itoa( i : seconds );
+    end if;
+
+  else
+    // remaining == 0 — let the state machine transition to Expired
+    generate Timer4:'tick'() to self;
+  end if;
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Paused
+// Countdown is frozen; remaining is preserved for resume.
+// -------------------------------------------------------------
+state Timer::Paused()
+
+  // Nothing to do here except wait for a resume or cancel event.
+  // The remaining value is kept intact so cooking can continue
+  // exactly where it left off when the door is closed again.
+
+end state;
+
+
+// -------------------------------------------------------------
+// STATE: Expired
+// Countdown reached zero; notify the oven.
+// -------------------------------------------------------------
+state Timer::Expired()
+
+  self.remaining  = 0;
+  self.tick_count = 0;
+
+  select one oven related by self->MicrowaveOven[R2];
+  if ( not_empty oven )
+    generate MicrowaveOven6:'timer_expired'() to oven;
+  end if;
+
+end state;
+
+
+// =============================================================
+// TRANSITION ACTIONS  (guard logic for the tick self-loop)
+// =============================================================
+
+// Transition: Running --[tick / remaining > 0]--> Running  (no action)
+
+// Transition: Running --[tick / remaining == 0]--> Expired
+transition Timer::Running:'tick'[remaining == 0] -> Expired()
+  // No extra action needed; state entry handles notification.
+end transition;
