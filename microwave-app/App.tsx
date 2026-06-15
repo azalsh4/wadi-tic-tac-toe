@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -33,6 +35,7 @@ const INITIAL_STATUS: OvenStatus = {
   magnetron_power: 0,
   cook_time: 0,
   power_level: 0,
+  beeping: false,
 };
 
 function now() {
@@ -47,6 +50,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const logId = useRef(0);
   const prevStatus = useRef<OvenStatus>(INITIAL_STATUS);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const addLog = useCallback((msg: string, isChange = false) => {
     setLog(prev => [
@@ -67,6 +71,21 @@ export default function App() {
     setStatus(s);
     setError(null);
   }, [addLog]);
+
+  // Pulse animation while beeping
+  useEffect(() => {
+    if (status.beeping) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.2, duration: 400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1,   duration: 400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+    }
+  }, [status.beeping, pulseAnim]);
 
   // Initial load + 1-second poll for live timer countdown
   useEffect(() => {
@@ -120,6 +139,12 @@ export default function App() {
           <Text style={s.title}>MICROWAVE OVEN</Text>
 
           {error && <Text style={s.error}>{error}</Text>}
+
+          {status.beeping && (
+            <Animated.View style={[s.beeper, { opacity: pulseAnim }]}>
+              <Text style={s.beeperText}>🔔  BEEP! BEEP! BEEP!</Text>
+            </Animated.View>
+          )}
 
           {/* Display panel */}
           <View style={s.panel}>
@@ -301,6 +326,13 @@ const s = StyleSheet.create({
     color: '#f87171', fontSize: 12, textAlign: 'center',
     backgroundColor: '#450a0a', borderRadius: 6,
     padding: 8, marginBottom: 12,
+  },
+  beeper: {
+    backgroundColor: '#7f1d1d', borderWidth: 1, borderColor: '#ef4444',
+    borderRadius: 10, padding: 14, marginBottom: 12, alignItems: 'center',
+  },
+  beeperText: {
+    color: '#fca5a5', fontSize: 18, fontWeight: '800', letterSpacing: 2,
   },
 
   panel: {

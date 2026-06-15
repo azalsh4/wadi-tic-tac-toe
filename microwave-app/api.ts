@@ -13,6 +13,7 @@ export interface OvenStatus {
   magnetron_power: number;
   cook_time: number;
   power_level: number;
+  beeping: boolean;
 }
 
 // Mac's LAN IP — phone and Mac must be on the same WiFi network

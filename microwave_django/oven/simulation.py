@@ -125,6 +125,8 @@ class MicrowaveOven:
         self.state = 'Off'
         self._lock = threading.Lock()
 
+        self.beeping = False
+
         self.magnetron = Magnetron()
         self.timer = Timer(self)
         self.door = Door(self)
@@ -133,6 +135,7 @@ class MicrowaveOven:
         self.display_msg = "OFF"
         self.cook_time = 0
         self.power_level = 0
+        self.beeping = False
         self.magnetron.deactivate()
         self.timer.cancel()
 
@@ -163,6 +166,7 @@ class MicrowaveOven:
     def _enter_Done(self):
         self.display_msg = "DONE!"
         self.cook_time = 0
+        self.beeping = True
         self.magnetron.deactivate()
 
     def power_on(self):
@@ -225,6 +229,7 @@ class MicrowaveOven:
     def acknowledge_done(self):
         with self._lock:
             if self.state == 'Done':
+                self.beeping = False
                 self.state = 'Idle'
                 self._enter_Idle()
 
@@ -239,6 +244,7 @@ class MicrowaveOven:
             'magnetron_power': self.magnetron.power_level,
             'cook_time': self.cook_time,
             'power_level': self.power_level,
+            'beeping': self.beeping,
         }
 
 
