@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { oven, OvenStatus, OvenState } from './simulation';
+import { fetchStatus, sendAction, OvenStatus, OvenState } from './api';
 
 const { width } = Dimensions.get('window');
 
@@ -23,17 +23,30 @@ interface LogEntry {
   isChange: boolean;
 }
 
+const INITIAL_STATUS: OvenStatus = {
+  display: '…',
+  oven_state: 'Off',
+  door_state: 'Closed',
+  timer_state: 'Inactive',
+  timer_remaining: 0,
+  magnetron_state: 'Off',
+  magnetron_power: 0,
+  cook_time: 0,
+  power_level: 0,
+};
+
 function now() {
   return new Date().toLocaleTimeString('en-US', { hour12: false });
 }
 
 export default function App() {
-  const [status, setStatus] = useState<OvenStatus>(oven.getStatus());
+  const [status, setStatus] = useState<OvenStatus>(INITIAL_STATUS);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [cookSecs, setCookSecs] = useState('30');
   const [cookPower, setCookPower] = useState('100');
+  const [error, setError] = useState<string | null>(null);
   const logId = useRef(0);
-  const prevState = useRef(status);
+  const prevStatus = useRef<OvenStatus>(INITIAL_STATUS);
 
   const addLog = useCallback((msg: string, isChange = false) => {
     setLog(prev => [
@@ -42,22 +55,45 @@ export default function App() {
     ]);
   }, []);
 
-  useEffect(() => {
-    const unsub = oven.onChange(s => {
-      const prev = prevState.current;
-      if (prev.ovenState !== s.ovenState) {
-        addLog(`State: ${prev.ovenState} → ${s.ovenState}`, true);
-      }
-      if (prev.doorState !== s.doorState) {
-        addLog(`Door: ${prev.doorState} → ${s.doorState}`);
-      }
-      prevState.current = s;
-      setStatus(s);
-    });
-    return unsub;
+  const applyStatus = useCallback((s: OvenStatus) => {
+    const prev = prevStatus.current;
+    if (prev.oven_state !== s.oven_state) {
+      addLog(`State: ${prev.oven_state} → ${s.oven_state}`, true);
+    }
+    if (prev.door_state !== s.door_state) {
+      addLog(`Door: ${prev.door_state} → ${s.door_state}`);
+    }
+    prevStatus.current = s;
+    setStatus(s);
+    setError(null);
   }, [addLog]);
 
-  const { ovenState: st, doorState } = status;
+  // Initial load + 1-second poll for live timer countdown
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const s = await fetchStatus();
+        if (!cancelled) applyStatus(s);
+      } catch {
+        if (!cancelled) setError('Cannot reach server — check Django is running');
+      }
+    };
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [applyStatus]);
+
+  const action = useCallback(async (act: string, extras?: Record<string, unknown>) => {
+    try {
+      const s = await sendAction(act, extras);
+      applyStatus(s);
+    } catch {
+      setError('Action failed — check Django is running');
+    }
+  }, [applyStatus]);
+
+  const { oven_state: st, door_state: doorState } = status;
 
   const displayColor = st === 'Done'
     ? '#fbbf24'
@@ -65,7 +101,7 @@ export default function App() {
       ? '#475569'
       : '#22d3ee';
 
-  const remaining = status.timerRemaining;
+  const remaining = status.timer_remaining;
   const remStr = remaining > 0
     ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`
     : '—';
@@ -83,42 +119,41 @@ export default function App() {
         >
           <Text style={s.title}>MICROWAVE OVEN</Text>
 
+          {error && <Text style={s.error}>{error}</Text>}
+
           {/* Display panel */}
           <View style={s.panel}>
             <Text style={[s.displayText, { color: displayColor }]}>
               {status.display}
             </Text>
             <View style={s.statsRow}>
-              <StatCell label="Timer" value={status.timerState} />
+              <StatCell label="Timer"     value={status.timer_state} />
               <StatCell label="Remaining" value={remStr} />
-              <StatCell
-                label="Magnetron"
-                value={`${status.magnetronState}${status.magnetronPower ? ` (${status.magnetronPower}%)` : ''}`}
-              />
-              <StatCell label="Power set" value={status.powerLevel ? `${status.powerLevel}%` : '—'} />
+              <StatCell label="Magnetron" value={`${status.magnetron_state}${status.magnetron_power ? ` (${status.magnetron_power}%)` : ''}`} />
+              <StatCell label="Power set" value={status.power_level ? `${status.power_level}%` : '—'} />
             </View>
           </View>
 
           {/* Badges */}
           <View style={s.badges}>
-            <Badge label={st} extraStyle={ovenBadgeStyle(st)} />
-            <Badge label={`Door: ${doorState}`} extraStyle={doorState === 'Open' ? s.badgeDanger : undefined} />
-            <Badge label={`Magnetron: ${status.magnetronState}`} extraStyle={status.magnetronState === 'On' ? s.badgeGreen : undefined} />
+            <Badge label={st}                       extraStyle={ovenBadgeStyle(st)} />
+            <Badge label={`Door: ${doorState}`}     extraStyle={doorState === 'Open' ? s.badgeDanger : undefined} />
+            <Badge label={`Magnetron: ${status.magnetron_state}`} extraStyle={status.magnetron_state === 'On' ? s.badgeGreen : undefined} />
           </View>
 
           {/* Power */}
           <Section title="Power">
             <View style={s.btnRow}>
-              <Btn label="Power On"  variant="primary" disabled={st !== 'Off'}   onPress={() => oven.powerOn()} />
-              <Btn label="Power Off" variant="danger"  disabled={st !== 'Idle'}  onPress={() => oven.powerOff()} />
+              <Btn label="Power On"  variant="primary" disabled={st !== 'Off'}  onPress={() => action('power_on')} />
+              <Btn label="Power Off" variant="danger"  disabled={st !== 'Idle'} onPress={() => action('power_off')} />
             </View>
           </Section>
 
           {/* Door */}
           <Section title="Door">
             <View style={s.btnRow}>
-              <Btn label="Open Door"  disabled={doorState === 'Open' || st === 'Off'} onPress={() => oven.openDoor()} />
-              <Btn label="Close Door" disabled={doorState === 'Closed'}               onPress={() => oven.closeDoor()} />
+              <Btn label="Open Door"  disabled={doorState === 'Open' || st === 'Off'} onPress={() => action('open_door')} />
+              <Btn label="Close Door" disabled={doorState === 'Closed'}               onPress={() => action('close_door')} />
             </View>
           </Section>
 
@@ -153,7 +188,7 @@ export default function App() {
                 onPress={() => {
                   const secs = parseInt(cookSecs, 10) || 30;
                   const pwr = Math.min(100, Math.max(1, parseInt(cookPower, 10) || 100));
-                  oven.startCooking(secs, pwr);
+                  action('start_cooking', { cook_time: secs, power_level: pwr });
                 }}
               />
             </View>
@@ -162,8 +197,8 @@ export default function App() {
           {/* Controls */}
           <Section title="Controls">
             <View style={s.btnRow}>
-              <Btn label="Cancel"           variant="danger" disabled={!['Cooking', 'Paused'].includes(st)} onPress={() => oven.cancel()} />
-              <Btn label="Acknowledge Done"                  disabled={st !== 'Done'}                        onPress={() => oven.acknowledgeDone()} />
+              <Btn label="Cancel"           variant="danger" disabled={!['Cooking', 'Paused'].includes(st)} onPress={() => action('cancel')} />
+              <Btn label="Acknowledge Done"                  disabled={st !== 'Done'}                        onPress={() => action('acknowledge_done')} />
             </View>
           </Section>
 
@@ -261,6 +296,11 @@ const s = StyleSheet.create({
   title: {
     color: '#64748b', fontSize: 12, fontWeight: '700',
     letterSpacing: 3, textAlign: 'center', marginBottom: 16,
+  },
+  error: {
+    color: '#f87171', fontSize: 12, textAlign: 'center',
+    backgroundColor: '#450a0a', borderRadius: 6,
+    padding: 8, marginBottom: 12,
   },
 
   panel: {
