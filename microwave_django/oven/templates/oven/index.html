@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Microwave Oven Simulator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+    }
+
+    .oven-body {
+      background: #0f172a;
+      border: 2px solid #334155;
+      border-radius: 16px;
+      padding: 2rem;
+      width: 420px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    /* Display panel */
+    .display {
+      background: #020617;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 1rem;
+    }
+
+    .display-main {
+      grid-column: 1 / -1;
+      font-size: 2.5rem;
+      font-family: 'Courier New', monospace;
+      color: #22d3ee;
+      text-align: center;
+      letter-spacing: 0.1em;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #1e3a5f;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat {
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+
+    .stat span {
+      color: #94a3b8;
+      font-weight: 600;
+    }
+
+    /* State badges */
+    .badges {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border: 1px solid transparent;
+    }
+
+    .badge-oven   { background: #1e293b; border-color: #475569; color: #94a3b8; }
+    .badge-door   { background: #1e293b; border-color: #475569; color: #94a3b8; }
+    .badge-mag    { background: #1e293b; border-color: #475569; color: #94a3b8; }
+
+    .badge-oven.Cooking  { background: #052e16; border-color: #16a34a; color: #4ade80; }
+    .badge-oven.Done     { background: #1c1917; border-color: #ca8a04; color: #fbbf24; }
+    .badge-oven.Paused   { background: #1e1b4b; border-color: #6d28d9; color: #a78bfa; }
+    .badge-door.Open     { background: #450a0a; border-color: #dc2626; color: #f87171; }
+    .badge-mag.On        { background: #052e16; border-color: #16a34a; color: #4ade80; }
+
+    /* Controls */
+    .section-title {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #475569;
+      margin-bottom: 0.5rem;
+    }
+
+    .controls { margin-bottom: 1.25rem; }
+
+    .btn-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      flex: 1;
+      min-width: 100px;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      background: #1e293b;
+      color: #cbd5e1;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #334155;
+      border-color: #60a5fa;
+      color: #fff;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .btn-danger { border-color: #7f1d1d; color: #f87171; }
+    .btn-danger:hover:not(:disabled) { background: #450a0a; border-color: #dc2626; color: #fca5a5; }
+
+    .btn-primary { border-color: #1d4ed8; color: #60a5fa; }
+    .btn-primary:hover:not(:disabled) { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+
+    /* Cook form */
+    .cook-form {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-top: 0.5rem;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    label { font-size: 0.7rem; color: #64748b; }
+
+    input[type="number"] {
+      width: 90px;
+      padding: 0.45rem 0.6rem;
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+
+    /* Log */
+    .log-section { margin-top: 1.25rem; }
+
+    #log {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 6px;
+      padding: 0.75rem;
+      height: 120px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: #64748b;
+    }
+
+    #log .entry { margin-bottom: 0.2rem; }
+    #log .entry .ts { color: #334155; margin-right: 0.4rem; }
+    #log .entry .msg { color: #94a3b8; }
+    #log .entry.change .msg { color: #22d3ee; }
+  </style>
+</head>
+<body>
+  <h1>Microwave Oven Simulator</h1>
+
+  <div class="oven-body">
+    <!-- Display -->
+    <div class="display">
+      <div class="display-main" id="display">OFF</div>
+      <div class="stat">Timer: <span id="stat-timer">Inactive</span></div>
+      <div class="stat">Remaining: <span id="stat-remaining">—</span></div>
+      <div class="stat">Magnetron: <span id="stat-mag">Off (0%)</span></div>
+      <div class="stat">Power set: <span id="stat-power">—</span></div>
+    </div>
+
+    <!-- Badges -->
+    <div class="badges">
+      <span class="badge badge-oven" id="badge-oven">Off</span>
+      <span class="badge badge-door" id="badge-door">Door: Closed</span>
+      <span class="badge badge-mag"  id="badge-mag">Magnetron: Off</span>
+    </div>
+
+    <!-- Power -->
+    <div class="controls">
+      <div class="section-title">Power</div>
+      <div class="btn-row">
+        <button id="btn-power-on"  class="btn-primary" onclick="send('power_on')">Power On</button>
+        <button id="btn-power-off" class="btn-danger"  onclick="send('power_off')">Power Off</button>
+      </div>
+    </div>
+
+    <!-- Door -->
+    <div class="controls">
+      <div class="section-title">Door</div>
+      <div class="btn-row">
+        <button id="btn-open"  onclick="send('open_door')">Open Door</button>
+        <button id="btn-close" onclick="send('close_door')">Close Door</button>
+      </div>
+    </div>
+
+    <!-- Cook -->
+    <div class="controls">
+      <div class="section-title">Cook</div>
+      <div class="cook-form">
+        <div class="field">
+          <label for="inp-time">Seconds</label>
+          <input id="inp-time"  type="number" value="30" min="1" max="3600">
+        </div>
+        <div class="field">
+          <label for="inp-power">Power %</label>
+          <input id="inp-power" type="number" value="100" min="1" max="100">
+        </div>
+        <button id="btn-start" class="btn-primary" onclick="startCooking()" style="flex:0; min-width:80px;">Start</button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="section-title">Controls</div>
+      <div class="btn-row">
+        <button id="btn-cancel" class="btn-danger" onclick="send('cancel')">Cancel</button>
+        <button id="btn-ack"    onclick="send('acknowledge_done')">Acknowledge Done</button>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-section">
+      <div class="section-title">Event log</div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    let lastState = null;
+
+    function ts() {
+      return new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    function log(msg, isChange = false) {
+      const div = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'entry' + (isChange ? ' change' : '');
+      entry.innerHTML = `<span class="ts">[${ts()}]</span><span class="msg">${msg}</span>`;
+      div.prepend(entry);
+    }
+
+    async function send(action, extra = {}) {
+      try {
+        const res = await fetch('/action/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, ...extra }),
+        });
+        const data = await res.json();
+        if (data.error) { log(`Error: ${data.error}`); return; }
+        applyState(data);
+      } catch (e) {
+        log(`Request failed: ${e.message}`);
+      }
+    }
+
+    function startCooking() {
+      const cookTime   = parseInt(document.getElementById('inp-time').value)  || 30;
+      const powerLevel = parseInt(document.getElementById('inp-power').value) || 100;
+      send('start_cooking', { cook_time: cookTime, power_level: powerLevel });
+    }
+
+    function applyState(s) {
+      document.getElementById('display').textContent = s.display;
+
+      document.getElementById('stat-timer').textContent     = s.timer_state;
+      document.getElementById('stat-remaining').textContent = s.timer_remaining > 0
+        ? `${Math.floor(s.timer_remaining / 60)}:${String(s.timer_remaining % 60).padStart(2, '0')}`
+        : '—';
+      document.getElementById('stat-mag').textContent   = `${s.magnetron_state} (${s.magnetron_power}%)`;
+      document.getElementById('stat-power').textContent = s.power_level ? `${s.power_level}%` : '—';
+
+      const badgeOven  = document.getElementById('badge-oven');
+      const badgeDoor  = document.getElementById('badge-door');
+      const badgeMag   = document.getElementById('badge-mag');
+
+      badgeOven.textContent = s.oven_state;
+      badgeOven.className   = `badge badge-oven ${s.oven_state}`;
+      badgeDoor.textContent = `Door: ${s.door_state}`;
+      badgeDoor.className   = `badge badge-door ${s.door_state}`;
+      badgeMag.textContent  = `Magnetron: ${s.magnetron_state}`;
+      badgeMag.className    = `badge badge-mag ${s.magnetron_state}`;
+
+      // Log state transitions
+      if (lastState && lastState.oven_state !== s.oven_state) {
+        log(`State: ${lastState.oven_state} → ${s.oven_state}`, true);
+      }
+      if (lastState && lastState.door_state !== s.door_state) {
+        log(`Door: ${lastState.door_state} → ${s.door_state}`);
+      }
+
+      // Button availability
+      const st = s.oven_state;
+      document.getElementById('btn-power-on').disabled  = st !== 'Off';
+      document.getElementById('btn-power-off').disabled = st !== 'Idle';
+      document.getElementById('btn-open').disabled      = s.door_state === 'Open' || st === 'Off';
+      document.getElementById('btn-close').disabled     = s.door_state === 'Closed';
+      document.getElementById('btn-start').disabled     = st !== 'Idle';
+      document.getElementById('btn-cancel').disabled    = !['Cooking', 'Paused'].includes(st);
+      document.getElementById('btn-ack').disabled       = st !== 'Done';
+
+      lastState = s;
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch('/status/');
+        const data = await res.json();
+        applyState(data);
+      } catch (_) {}
+    }
+
+    // Initial load then poll every second
+    poll();
+    setInterval(poll, 1000);
+  </script>
+</body>
+</html>
